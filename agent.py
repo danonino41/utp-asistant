@@ -67,6 +67,142 @@ def normalizar_respuesta(respuesta):
     return cuerpo
 
 
+_MARCA_BORRADOR = ("BORRADOR DE RESPUESTA AL CLIENTE", "BORRADOR PARA EL CLIENTE",
+                   "BORRADOR DE RESPUESTA", "Borrador de respuesta al cliente",
+                   "Respuesta propuesta para el cliente", "Respuesta propuesta al cliente",
+                   "Respuesta sugerida al cliente", "Respuesta sugerida para", "Sugiero responder")
+
+
+def _extraer_borrador(texto):
+    """Toma la seccion BORRADOR DE RESPUESTA AL CLIENTE que el modelo
+    produjo y, si no existe, no fabrica contenido."""
+    texto = (texto or "").strip()
+    if not texto:
+        return ""
+    idx = -1
+    marca = ""
+    for m in _MARCA_BORRADOR:
+        pos = texto.find(m)
+        if pos != -1:
+            idx, marca = pos, m
+            break
+    if idx == -1:
+        return ""
+    seg = texto[idx + len(marca):].strip()
+    if seg.startswith(":"):
+        seg = seg[1:].strip()
+    lineas = seg.splitlines()
+    while lineas and _PREGUNTA_FINAL.match(lineas[-1].strip()):
+        lineas.pop()
+    return "\n".join(lineas).strip()
+
+
+def _identificador_resultado(resultado):
+    if not isinstance(resultado, dict):
+        return "sin resultado"
+    if not resultado.get("ok"):
+        return resultado.get("error", "fallo (sin detalle)")
+    piezas = []
+    if resultado.get("duplicado"):
+        piezas.append("ya existia (idempotencia)")
+    for k in ("ticket", "contacto_id", "evento_id", "caso_id", "pendiente_id"):
+        if resultado.get(k):
+            piezas.append(f"{k}={resultado[k]}")
+    if resultado.get("accion"):
+        piezas.append("accion=" + resultado["accion"])
+    if resultado.get("estado"):
+        piezas.append("estado=" + resultado.get("estado"))
+    if resultado.get("franjas_disponibles"):
+        piezas.append("franjas=" + str(len(resultado["franjas_disponibles"])))
+    if not piezas:
+        piezas.append("ok")
+    return "; ".join(piezas)
+
+
+def _resumen_cliente(llamadas):
+    for c in llamadas:
+        if c.get("nombre") != "actualizar_contacto_en_crm":
+            continue
+        a = c.get("args") or {}
+        r = c.get("resultado") or {}
+        nombre = a.get("nombre_completo") or "(sin nombre)"
+        cargo = a.get("cargo") or "(sin cargo)"
+        empresa = a.get("empresa") or "(sin empresa)"
+        estado = a.get("estado_oportunidad") or r.get("accion") or "sin estado"
+        if not r.get("ok"):
+            return f"CLIENTE: {nombre} ({cargo}, {empresa}) - fallo al actualizar CRM: {r.get('error', 'desconocido')}."
+        return (f"CLIENTE: {nombre} ({cargo}, {empresa}) - {r.get('accion')} en CRM "
+                f"({r.get('contacto_id')}), estado {estado}.")
+    return "CLIENTE: no se modifico el CRM en este run."
+
+
+def _resumen_requisitos(llamadas):
+    for c in llamadas:
+        if c.get("nombre") != "crear_ticket_en_jira":
+            continue
+        a = c.get("args") or {}
+        r = c.get("resultado") or {}
+        reqs = a.get("requisitos") or []
+        if r.get("duplicado"):
+            return "REQUISITOS DETECTADOS: ya registrados en el ticket previo de este hilo (idempotencia)."
+        if not reqs:
+            return "REQUISITOS DETECTADOS: ninguno en este correo."
+        lineas = ["REQUISITOS DETECTADOS:"]
+        for req in reqs:
+            cita = req.get("cita_textual") or ""
+            lineas.append(f"- {req.get('descripcion')}. [cita: \"{cita}\" | confianza {req.get('confianza')}]")
+        return "\n".join(lineas)
+    return "REQUISITOS DETECTADOS: ninguno en este run."
+
+
+def _resumen_acciones(llamadas):
+    if not llamadas:
+        return "ACCIONES EJECUTADAS: ninguna (correo no accionable o solo informativo)."
+    lineas = ["ACCIONES EJECUTADAS:"]
+    for c in llamadas:
+        r = c.get("resultado") or {}
+        detalle = _identificador_resultado(r)
+        lineas.append(f"- {c.get('nombre')}: {detalle}")
+    return "\n".join(lineas)
+
+
+def _resumen_pendientes(run_id):
+    pend = [p for p in tools_sim.PENDIENTES
+            if p.get("datos", {}).get("run_id") == run_id and p.get("estado") == "pendiente"]
+    if not pend:
+        return "PENDIENTES DE CONFIRMACION: ninguno para este run."
+    lineas = ["PENDIENTES DE CONFIRMACION:"]
+    for p in pend:
+        datos = p.get("datos", {})
+        extra = ""
+        if p.get("tipo") == "reunion" and datos.get("evento_id"):
+            extra = f" (borrador {datos['evento_id']})"
+        elif p.get("tipo") == "definir_franja" and datos.get("franjas"):
+            franjas = "; ".join(f.get("inicio", "") for f in datos["franjas"])
+            extra = f" [franjas: {franjas}]"
+        elif p.get("tipo") == "escalamiento" and datos.get("caso_id"):
+            extra = f" (caso {datos['caso_id']})"
+        lineas.append(f"- {p.get('descripcion')} ({p.get('tipo')}, {p.get('id')}){extra}")
+    return "\n".join(lineas)
+
+
+def generar_reporte_run(remitente, clasificacion, id_hilo_correo, estado, run_id,
+                        llamadas, texto_modelo):
+    """Construye la respuesta final con la plantilla EXACTA del documento,
+    a partir de los resultados auditados (no del texto libre del modelo).
+
+    El texto del modelo solo se usa como BORRADOR DE RESPUESTA AL CLIENTE.
+    """
+    cats = " / ".join(clasificacion.get("categorias") or []) or "sin clasificar"
+    etiqueta = "accionable" if clasificacion.get("accionable") else "no accionable"
+    resumen = (f"RESUMEN DEL CORREO: correo de {remitente} en el hilo {id_hilo_correo}. "
+               f"Clasificado como {etiqueta} ({cats}). Run {run_id} en estado {estado}.")
+    borrador = _extraer_borrador(texto_modelo) or "El asistente no anexo un borrador de respuesta."
+    secciones = [resumen, _resumen_cliente(llamadas), _resumen_requisitos(llamadas),
+                 _resumen_acciones(llamadas), _resumen_pendientes(run_id)]
+    return "\n\n".join(secciones) + "\n\nBORRADOR DE RESPUESTA AL CLIENTE:\n" + borrador
+
+
 def _fecha_hoy_es():
     dias = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
     meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -625,6 +761,7 @@ class Agente:
 
         llamadas_registradas = []
         ultimo_contenido = ""
+        contenido_modelo = ""
         estado_final = "completed"
         franjas_ultimas = None
         for ronda in range(1, MAX_ROUNDS + 1):
@@ -643,7 +780,10 @@ class Agente:
 
             llamadas = mensaje.get("tool_calls")
             if not llamadas:
-                ultimo_contenido = normalizar_respuesta((mensaje.get("content") or "").strip())
+                contenido_modelo = (mensaje.get("content") or "").strip()
+                ultimo_contenido = generar_reporte_run(
+                    remitente, clasificacion, id_hilo_correo, estado_final,
+                    run_id, llamadas_registradas, contenido_modelo)
                 mensajes.append({"role": "assistant", "content": ultimo_contenido or "Sin respuesta de texto."})
                 emitir({"tipo": "estado", "run_id": run_id,
                         "texto": f"Run -> completed (ronda {ronda})."})
@@ -652,6 +792,7 @@ class Agente:
 
             emitir({"tipo": "estado", "run_id": run_id,
                     "texto": f"Ronda {ronda}: requires_action - el modelo solicita herramientas."})
+            inicio_i = len(llamadas_registradas)
             for llamada in llamadas:
                 nombre = llamada["function"]["name"]
                 try:
@@ -672,7 +813,7 @@ class Agente:
             })
 
             entrega_ok = True
-            for llamada in llamadas:
+            for pos, llamada in enumerate(llamadas):
                 nombre = llamada["function"]["name"]
                 try:
                     args = json.loads(llamada["function"]["arguments"] or "{}")
@@ -684,6 +825,8 @@ class Agente:
                     resultado = {"ok": False, "error": f"Fallo del dispatcher: {e}"}
                     entrega_ok = False
                 ok = bool(resultado.get("ok", False))
+                llamadas_registradas[inicio_i + pos].setdefault("resultado", {}).update(resultado)
+                llamadas_registradas[inicio_i + pos]["ok"] = ok
                 if nombre == "consultar_disponibilidad_calendario" and resultado.get("franjas_disponibles"):
                     franjas_ultimas = resultado["franjas_disponibles"]
                 emitir({"tipo": "resultado", "ronda": ronda, "nombre": nombre, "resultado": resultado, "ok": ok})
@@ -734,6 +877,7 @@ class Agente:
             "estado": estado_final,
             "clasificacion": clasificacion,
             "agenda_pendiente": agenda_pendiente,
+            "respuesta_modelo": contenido_modelo,
         }
 
 
