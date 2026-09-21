@@ -348,6 +348,33 @@ def escalar_a_responsable_humano(args):
             "recibido_por": "responsable_comercial@utpconsult.com"}
 
 
+def registrar_requerimiento_agenda(id_hilo, franjas, run_id=None):
+    """Paso 8 del informe: si un run consulto disponibilidad pero termino sin
+    crear el borrador de reunion, se registra un pendiente operativo para
+    que el equipo defina la franja (nunca se deja en silencio).
+
+    Devuelve el ID del pendiente o None si ya hay reunion (borrador o
+    confirmada) para el hilo.
+    """
+    if _hay_evento_para_hilo(id_hilo):
+        return None
+    franjas = (franjas or [])[:3]
+    pid = _nuevo_id("P", "pendiente")
+    desc = "Reunion solicitada por el cliente sin franja definida: pendiente de agendar por el equipo."
+    if franjas:
+        opciones = ", ".join(f.get("inicio", "") for f in franjas)
+        desc = "Reunion solicitada por el cliente sin franja definida para agendar. Franjas disponibles: " + opciones + "."
+    PENDIENTES.append({
+        "id": pid,
+        "tipo": "definir_franja",
+        "estado": "pendiente",
+        "descripcion": desc,
+        "datos": {"franjas": franjas, "run_id": run_id, "id_hilo": id_hilo},
+    })
+    _registrar_mutacion(run_id, {"tipo": "pendiente", "clave": pid, "id_hilo": id_hilo})
+    return pid
+
+
 REGISTRO = {
     "consultar_disponibilidad_calendario": consultar_disponibilidad_calendario,
     "agendar_reunion_en_google_calendar": agendar_reunion_en_google_calendar,

@@ -130,17 +130,27 @@ def mostrar_proceso():
     cola = st.session_state.cola
     ctx = st.session_state.ctx
     traza = []
+    instalacion = datetime.now()
+    reloj = st.empty()
     with st.status("Ejecutando UTP Assistant…", expanded=True) as caja:
         caja.caption("Llamando al modelo en NVIDIA. Cada ronda puede tardar 1-3 minutos.")
         while not (ctx["hecho"] and cola.empty()):
+            transcurrido = int((datetime.now() - instalacion).total_seconds())
+            reloj.caption(
+                f":material/timer: {transcurrido // 60}:{transcurrido % 60:02d} transcurridos · "
+                f"el proceso está vivo, esperando respuesta del modelo (sin nuevos eventos)…"
+            )
             try:
-                ev = cola.get(timeout=0.4)
+                ev = cola.get(timeout=0.5)
             except queue.Empty:
                 continue
             render_evento(ev, caja)
+            transcurrido = int((datetime.now() - instalacion).total_seconds())
+            reloj.caption(f":material/timer: {transcurrido // 60}:{transcurrido % 60:02d} transcurridos")
             linea = formato_evento(ev)
             if linea:
                 traza.append(linea)
+        reloj.empty()
         if ctx["error"]:
             caja.update(label="Run finalizado con error", state="error")
         else:
