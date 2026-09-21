@@ -98,7 +98,8 @@ def render_evento(ev, caja):
 
 def iniciar_proceso(clave, modelo, remitente, id_hilo, cuerpo, adjunto):
     st.session_state.procesando = True
-    st.session_state.cola = queue.Queue()
+    cola = queue.Queue()
+    st.session_state.cola = cola
     ctx = {"hecho": False, "resultado": None, "error": None, "ejecuciones": []}
     st.session_state.ctx = ctx
     historial = list(st.session_state.hilos.get(id_hilo, {}).get("mensajes_api", []))
@@ -108,7 +109,7 @@ def iniciar_proceso(clave, modelo, remitente, id_hilo, cuerpo, adjunto):
             cl = agente_mod.Agente(clave, modelo)
 
             def on_ev(ev):
-                st.session_state.cola.put(ev)
+                cola.put(ev)
                 if ev.get("tipo") == "ejecucion":
                     ctx["ejecuciones"].append(ev)
 
@@ -321,19 +322,19 @@ def pestaña_resultados():
 
 def pestaña_auditoria():
     st.markdown(":material/manage_search: **Auditoría y estado de los sistemas simulados**")
-    r = tools_sim.resumen_datos()
+    r = tools_sim.resumen_datos() if hasattr(tools_sim, "resumen_datos") else {}
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Tickets en Jira", r["tickets_jira"])
-    c2.metric("Contactos en CRM", r["contactos_crm"])
-    c3.metric("Eventos agendados", r["eventos_agendados"])
-    c4.metric("Escalamientos", r["escalamientos"])
-    c5.metric("Pendientes", r["pendientes"])
-    c6.metric("Runs", r["runs"])
+    c1.metric("Tickets en Jira", r.get("tickets_jira", 0))
+    c2.metric("Contactos en CRM", r.get("contactos_crm", 0))
+    c3.metric("Eventos agendados", r.get("eventos_agendados", 0))
+    c4.metric("Escalamientos", r.get("escalamientos", 0))
+    c5.metric("Pendientes", r.get("pendientes", 0))
+    c6.metric("Runs", r.get("runs", 0))
     st.markdown("---")
     with st.expander("Runs y reversión (run_id)", expanded=False):
-        runs = tools_sim.listar_runs()
-        if not runs:
+        if not hasattr(tools_sim, "listar_runs") or not tools_sim.listar_runs():
             st.caption("Sin runs registrados.")
+        runs = tools_sim.listar_runs() if hasattr(tools_sim, "listar_runs") else []
         for run in runs:
             with st.container(border=True):
                 ca, cb = st.columns([4, 1])

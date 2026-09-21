@@ -1,0 +1,40 @@
+From: Ana Torres <ana.torres@techcorp.com>
+To: ventas@utpconsult.com, pm@utpconsult.com
+Cc: 
+Subject: Avance modulo de pagos - solicito reunion
+Date: Mon, 21 Sep 2026 09:30:00 -0500
+Message-ID: <abc123.callback.techcorp.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="B1290381"
+
+--B1290381
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Hola equipo de UTP Consult, gracias por la propuesta. Nos interesa avanzar.
+Podriamos tener una reunion la proxima semana para discutir los detalles
+tecnicos del modulo de pagos. Adjunto un documento con algunos requisitos
+iniciales.
+
+Saludos,
+Ana Torres
+Gerenta de Proyectos
+TechCorp
+ana.torres@techcorp.com
++51 999 123 456
+
+--B1290381
+Content-Type: text/plain; charset=utf-8
+Content-Disposition: attachment; filename="requisitos-iniciales.txt"
+Content-Transfer-Encoding: 8bit
+
+REQUISITOS INICIALES - MODULO DE PAGOS (TechCorp)
+
+RF1: El modulo de pagos debe aceptar tarjetas Visa y Mastercard.
+RF2: El sistema debe emitir comprobante electronico por cada pago.
+RF3: Se requiere un modulo de reembolso parcial para pedidos cancelados.
+RF4: Las transacciones deben registrarse con fecha y hora de America/Lima.
+RNF1: El pago no debe exceder 3 segundos de latencia de confirmacion.
+RNF2: El modulo debe soportar hasta 100 operaciones simultaneas.
+
+--B1290381--
