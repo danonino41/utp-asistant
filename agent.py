@@ -719,6 +719,19 @@ class Agente:
                 on_evento(evento)
 
         run_id = f"run-{uuid.uuid4().hex[:8]}"
+
+        bloqueo = tools_sim.esta_bloqueado(remitente)
+        if bloqueo:
+            mensaje = (f"Correo bloqueado: el remitente {remitente} figura en la lista negra "
+                       f"(caso {bloqueo.get('caso')}, motivo {bloqueo.get('motivo')}). "
+                       "No se proceso el correo.")
+            emitir({"tipo": "estado", "run_id": run_id,
+                    "texto": f"Run {run_id} -> correo_bloqueado (remitente en lista negra)."})
+            emitir({"tipo": "final", "contenido": mensaje})
+            return {"historial": [], "respuesta_final": mensaje, "llamadas": [], "run_id": run_id,
+                    "estado": "completed", "clasificacion": {"accionable": False},
+                    "bloqueado": bloqueo}
+
         tools_sim.registrar_participante(id_hilo_correo, remitente)
 
         clasificacion = clasificar_correo(remitente, cuerpo_correo)
@@ -820,7 +833,7 @@ class Agente:
                 except json.JSONDecodeError:
                     args = {}
                 try:
-                    resultado = _ejecutar_herramienta(nombre, args, id_hilo_correo, fuentes_cita, run_id)
+                    resultado = _ejecutar_herramienta(nombre, args, id_hilo_correo, fuentes_cita, run_id, remitente)
                 except Exception as e:
                     resultado = {"ok": False, "error": f"Fallo del dispatcher: {e}"}
                     entrega_ok = False
@@ -881,9 +894,10 @@ class Agente:
         }
 
 
-def _ejecutar_herramienta(nombre, args, id_hilo_correo, fuentes_cita, run_id=None):
+def _ejecutar_herramienta(nombre, args, id_hilo_correo, fuentes_cita, run_id=None, remitente=""):
     from tools_sim import ejecutar_funcion
+    args = dict(args or {})
+    args["_remitente"] = remitente
     if nombre == "consultar_disponibilidad_calendario":
-        args = dict(args)
         args["_semana_objetivo"] = _rango_proxima_semana(False)
     return ejecutar_funcion(nombre, args, id_hilo_correo, fuentes_cita, run_id)

@@ -41,6 +41,8 @@ ESCALADOS = []
 
 PENDIENTES = []
 
+LISTA_NEGRA = {}   # correo normalizado -> registro de bloqueo tras aprobar un escalamiento
+
 REGISTRO_HILOS = {}   # id_hilo_correo -> set de correos vistos en el hilo
 MUTACIONES = {}       # run_id -> lista de mutaciones revertibles
 RUNS = {}             # run_id -> metadatos del run
@@ -95,7 +97,31 @@ def lista_blanca(id_hilo):
 def _permite_invitar(correo, id_hilo):
     if not correo:
         return False
+    if correo in LISTA_NEGRA:
+        return False
     return correo in lista_blanca(id_hilo) or correo.endswith("@" + DOMINIO_CORPORATIVO)
+
+
+def esta_bloqueado(remitente):
+    """Lista negra (mitigacion Riesgo 2): devuelve el registro de bloqueo si
+    el remitente fue bloqueado al aprobar un escalamiento."""
+    correo = _extraer_correo(remitente)
+    if not correo:
+        return None
+    return LISTA_NEGRA.get(correo)
+
+
+def bloquear_remitente(correo, motivo, caso, run_id):
+    if not correo:
+        return
+    LISTA_NEGRA[correo] = {
+        "motivo": motivo,
+        "caso": caso,
+        "descripcion": "Remitente bloqueado por aprobacion de un escalamiento.",
+        "run_id": run_id,
+        "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    _registrar_mutacion(run_id, {"tipo": "bloqueo", "clave": correo})
 
 
 def _registrar_mutacion(run_id, mut):
@@ -322,18 +348,22 @@ def actualizar_contacto_en_crm(args):
     return {"ok": True, "contacto_id": contacto_id, "accion": "creado", "correo": correo}
 
 
-def _registrar_escalamiento(motivo, detalle, prioridad, id_hilo, run_id):
+def _registrar_escalamiento(motivo, detalle, prioridad, id_hilo, run_id, remitente=""):
     caso_id = _nuevo_id("ESC", "caso")
     pid = _nuevo_id("P", "pendiente")
+    correo = _extraer_correo(remitente)
     ESCALADOS.append({"caso": caso_id, "motivo": motivo, "prioridad": prioridad,
-                      "detalle": detalle, "id_hilo": id_hilo, "run_id": run_id})
+                      "detalle": detalle, "id_hilo": id_hilo, "run_id": run_id,
+                      "remitente": correo})
     PENDIENTES.append({
         "id": pid,
         "tipo": "escalamiento",
         "estado": "pendiente",
-        "descripcion": f"[{prioridad.upper()}] {motivo}: {detalle}",
+        "descripcion": (f"[{prioridad.upper()}] {motivo}: {detalle}. "
+                        "APROBAR bloquea al remitente en la lista negra."),
         "datos": {"caso_id": caso_id, "motivo": motivo, "prioridad": prioridad,
-                  "detalle": detalle, "run_id": run_id, "id_hilo": id_hilo},
+                  "detalle": detalle, "run_id": run_id, "id_hilo": id_hilo,
+                  "remitente": correo},
     })
     _registrar_mutacion(run_id, {"tipo": "escalamiento", "clave": caso_id, "id_hilo": id_hilo})
     _registrar_mutacion(run_id, {"tipo": "pendiente", "clave": pid, "id_hilo": id_hilo})
@@ -343,7 +373,7 @@ def _registrar_escalamiento(motivo, detalle, prioridad, id_hilo, run_id):
 def escalar_a_responsable_humano(args):
     caso_id = _registrar_escalamiento(
         args.get("motivo"), args.get("detalle", ""), args.get("prioridad", "media"),
-        args.get("id_hilo_correo"), args.get("_run_id"))
+        args.get("id_hilo_correo"), args.get("_run_id"), args.get("_remitente", ""))
     return {"ok": True, "caso_id": caso_id,
             "recibido_por": "responsable_comercial@utpconsult.com"}
 
@@ -408,6 +438,9 @@ def aprobar_pendiente(pid):
                 EVENTOS[EVT] = {"titulo": datos.get("titulo"), "inicio": datos.get("fecha_hora_inicio"),
                                 "duracion": datos.get("duracion_minutos"), "invitados": datos.get("correos_invitados"),
                                 "estado": "confirmada", "id_hilo": datos.get("id_hilo")}
+            elif p["tipo"] == "escalamiento" and datos.get("remitente"):
+                bloquear_remitente(datos["remitente"], datos.get("motivo"),
+                                   datos.get("caso_id"), datos.get("run_id"))
             return True
     return False
 
@@ -428,12 +461,13 @@ def resumen_datos():
         "escalamientos": len(ESCALADOS),
         "pendientes": len([p for p in PENDIENTES if p["estado"] == "pendiente"]),
         "runs": len(RUNS),
+        "bloqueados": len(LISTA_NEGRA),
     }
 
 
 def reiniciar_datos():
     global CRM, JIRA, AGENDA, EVENTOS, ESCALADOS, PENDIENTES, SECUENCIAL
-    global REGISTRO_HILOS, MUTACIONES, RUNS
+    global REGISTRO_HILOS, MUTACIONES, RUNS, LISTA_NEGRA
     SECUENCIAL.update({"jira": 482, "crm": 10327, "evento": 900001, "caso": 1, "pendiente": 1})
     CRM.clear()
     CRM.update({"lucia.vela@acme.com": {"nombre": "Lucia Vela", "empresa": "Acme SAC", "cargo": "Gerenta de TI", "estado": "en_negociacion"}})
@@ -443,6 +477,7 @@ def reiniciar_datos():
     EVENTOS.clear()
     ESCALADOS.clear()
     PENDIENTES.clear()
+    LISTA_NEGRA.clear()
     REGISTRO_HILOS.clear()
     MUTACIONES.clear()
     RUNS.clear()

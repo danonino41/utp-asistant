@@ -214,14 +214,21 @@ def pestaña_nuevo_correo(clave, modelo):
                     if not thread_id:
                         thread_id = "auto-" + uuid.uuid4().hex[:8]
                     adjunto_texto = "\n".join(a["texto"] for a in parsed["adjuntos"][:3])
-                    st.session_state.prefill = {
-                        "remitente": parsed["remitente"],
-                        "id_hilo": thread_id,
-                        "cuerpo": parsed["cuerpo"],
-                        "adjunto": adjunto_texto,
-                    }
-                    st.success(f"EML aplicado. Hilo resuelto: `{thread_id}` "
-                               f"({len(parsed['adjuntos'])} adjunto(s)). Revisa los campos y procesa.")
+                    bloqueado = tools_sim.esta_bloqueado(parsed["remitente"]) if hasattr(tools_sim, "esta_bloqueado") else None
+                    if bloqueado:
+                        st.warning(f":material/block: Correo rechazado por la capa de ingesta: el "
+                                   f"remitente `{parsed['remitente']}` figura en la lista negra "
+                                   f"(caso {bloqueado.get('caso')}, motivo {bloqueado.get('motivo')}). "
+                                   f"El correo no se pre-cargó ni se procesará.")
+                    else:
+                        st.session_state.prefill = {
+                            "remitente": parsed["remitente"],
+                            "id_hilo": thread_id,
+                            "cuerpo": parsed["cuerpo"],
+                            "adjunto": adjunto_texto,
+                        }
+                        st.success(f"EML aplicado. Hilo resuelto: `{thread_id}` "
+                                   f"({len(parsed['adjuntos'])} adjunto(s)). Revisa los campos y procesa.")
                 except Exception as e:
                     st.error(f"No se pudo interpretar el EML: {e}")
 
@@ -256,6 +263,9 @@ def pestaña_nuevo_correo(clave, modelo):
             st.warning("Pega el cuerpo del correo antes de procesar.")
             return
         cuerpo_texto = cuerpo.strip()
+        if hasattr(tools_sim, "esta_bloqueado") and tools_sim.esta_bloqueado(remitente):
+            st.warning(":material/block: Remitente en lista negra. El agente no procesa este correo.")
+            return
         adjunto_texto = ""
         if archivo is not None:
             adjunto_texto = ingesta.extraer_texto_adjunto(archivo.name, archivo.getvalue())
@@ -340,6 +350,7 @@ def pestaña_auditoria():
     c4.metric("Escalamientos", r.get("escalamientos", 0))
     c5.metric("Pendientes", r.get("pendientes", 0))
     c6.metric("Runs", r.get("runs", 0))
+    st.caption(f":material/block: Remitentes bloqueados en lista negra: {r.get('bloqueados', 0)}")
     st.markdown("---")
     with st.expander("Runs y reversión (run_id)", expanded=False):
         if not hasattr(tools_sim, "listar_runs") or not tools_sim.listar_runs():
