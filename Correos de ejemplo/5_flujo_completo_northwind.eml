@@ -1,0 +1,43 @@
+From: Carlos Mendoza <carlos.mendoza@northwind.com>
+To: pm@utpconsult.com, ventas@utpconsult.com
+Cc:
+Subject: Avance licitacion modulo de cobranzas - siguiente paso
+Date: Mon, 21 Sep 2026 10:30:00 -0500
+Message-ID: <licitacion2026.inicial@northwind.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary=NN
+
+--NN
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Buenos dias, equipo de UTPConsult.
+
+Somos Northwind SAC y hemos quedado conformes con la propuesta presentada para el modulo de cobranzas.
+
+Queremos concretar la siguiente reunion el jueves 24 de septiembre a las 11:00 (hora de Lima) para revisar los alcances finales antes de suscribir el contrato.
+
+Adjunto la especificacion inicial con los requisitos funcionales y no funcionales que debera cumplir el modulo.
+
+Saludos cordiales,
+Carlos Mendoza
+Jefe de Proyectos
+Northwind SAC
+carlos.mendoza@northwind.com
++51 987 654 321
+
+--NN
+Content-Type: text/plain; charset=utf-8
+Content-Disposition: attachment; filename=requisitos_cobranzas.txt
+Content-Transfer-Encoding: 8bit
+
+REQUISITOS DE COBRANZAS - NORTHWIND SAC
+
+RF1: El modulo de cobranzas debe soportar pagos mediante deposito bancario y transferencia interbancaria.
+RF2: El sistema debe generar un comprobante de pago por cada cobro registrado.
+RF3: El modulo debe permitir registrar multiples cuotas por deuda y vencerlas por separado.
+RF4: Toda operacion debe quedar registrada con la fecha y hora en zona horaria America/Lima.
+RNF1: El tiempo de validacion de un pago no debe superar los 3 segundos.
+RNF2: El modulo debe soportar hasta 200 cobros simultaneos.
+
+--NN--
