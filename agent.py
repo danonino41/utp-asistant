@@ -37,6 +37,36 @@ def _normalizar(texto):
     return re.sub(r"\s+", " ", texto).strip().lower()
 
 
+_PREGUNTA_FINAL = re.compile(
+    r"^\s*¿\s*(?:deseas|quieres|prefieres|puedo|debo|gustaria|consideras)\b[^?]*\?\s*$",
+    re.IGNORECASE)
+
+
+def normalizar_respuesta(respuesta):
+    """Refuerza la plantilla del documento (apartado FORMATO DE SALIDA):
+
+    Si la respuesta termina con preguntas sueltas del tipo "¿Deseas...?",
+    las elimina del cierre y las traslada a PENDIENTES DE CONFIRMACION.
+    """
+    if not respuesta:
+        return respuesta
+    lineas = respuesta.splitlines()
+    preguntas = []
+    i = len(lineas)
+    while i > 0 and _PREGUNTA_FINAL.match(lineas[i - 1].strip()):
+        preguntas.append(lineas[i - 1].strip())
+        i -= 1
+    if not preguntas:
+        return respuesta
+    preguntas.reverse()
+    cuerpo = "\n".join(lineas[:i]).rstrip()
+    if "PENDIENTES DE CONFIRMACION" in cuerpo:
+        cuerpo = cuerpo.rstrip() + "\n- " + "\n- ".join(preguntas)
+    else:
+        cuerpo = cuerpo + "\n\nPENDIENTES DE CONFIRMACION:\n- " + "\n- ".join(preguntas)
+    return cuerpo
+
+
 def _fecha_hoy_es():
     dias = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
     meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -240,6 +270,15 @@ Ronda 2 (misma ejecucion): agendar_reunion_en_google_calendar con la
   hora; se propone el Lunes 09:00 y se creo el borrador; alternativas
   11:00 y 15:00."
 
+Ejemplo 6 - Cierre correcto de un reporte.
+Salida prohibida:
+"...¿Deseas que escale la consulta al equipo responsable?"
+Salida esperada:
+"PENDIENTES DE CONFIRMACION:
+1. Validar viabilidad del cobro por transferencia bancaria en la
+   primera entrega (peticion del cliente, alcance nuevo).
+BORRADOR DE RESPUESTA AL CLIENTE: [texto del borrador]"
+
 ### FORMATO DE SALIDA
 Tu respuesta final se dirige SIEMPRE al equipo interno de UTPConsult, no
 al cliente, y respeta estrictamente esta plantilla. No improvises otras
@@ -260,6 +299,12 @@ no uses saludos iniciales ni cierres retoricos; no termines con preguntas
 del tipo "¿Deseas que envie la respuesta?"; cualquier decision que deba
 tomar el equipo va en PENDIENTES DE CONFIRMACION; no uses viñetas con
 emojis (ni ✅ ni 📅) en lugar de los encabezados.
+REGLA DURA: tu respuesta final concluye SIEMPRE en la secuencia
+"PENDIENTES DE CONFIRMACION" -> "BORRADOR DE RESPUESTA AL CLIENTE".
+La ultima linea debe ser una frase del borrador, nunca una pregunta.
+Si detectas que quieres preguntar algo al equipo, no lo conviertas en
+una pregunta final: escribelo como un item numerado dentro de
+PENDIENTES DE CONFIRMACION.
 
 ### TONO
 Profesional, conciso y directo, en el idioma del correo original.
@@ -598,7 +643,7 @@ class Agente:
 
             llamadas = mensaje.get("tool_calls")
             if not llamadas:
-                ultimo_contenido = (mensaje.get("content") or "").strip()
+                ultimo_contenido = normalizar_respuesta((mensaje.get("content") or "").strip())
                 mensajes.append({"role": "assistant", "content": ultimo_contenido or "Sin respuesta de texto."})
                 emitir({"tipo": "estado", "run_id": run_id,
                         "texto": f"Run -> completed (ronda {ronda})."})
